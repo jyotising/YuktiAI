@@ -1,6 +1,32 @@
 import requests
 from config import RAINFOREST_API_KEY
 
+
+# ==========================================
+# SHORT LINK FUNCTION
+# ==========================================
+
+def shorten_url(url):
+
+    try:
+
+        api = f"https://tinyurl.com/api-create.php?url={url}"
+
+        response = requests.get(api)
+
+        if response.status_code == 200:
+            return response.text
+
+        return url
+
+    except:
+        return url
+
+
+# ==========================================
+# DETECT SHOPPING QUERY
+# ==========================================
+
 def is_shopping_query(text):
 
     shopping_words = [
@@ -12,7 +38,11 @@ def is_shopping_query(text):
         "recommend",
         "laptop",
         "phone",
-        "earbuds"
+        "smartphone",
+        "earbuds",
+        "headphones",
+        "watch",
+        "shoes"
     ]
 
     text = text.lower()
@@ -21,6 +51,11 @@ def is_shopping_query(text):
         word in text
         for word in shopping_words
     )
+
+
+# ==========================================
+# SEARCH AMAZON PRODUCTS
+# ==========================================
 
 def search_amazon_products(query):
 
@@ -47,6 +82,10 @@ def search_amazon_products(query):
 
     for item in data["search_results"][:5]:
 
+        # ==========================
+        # PRICE
+        # ==========================
+
         price_data = item.get("price")
 
         if isinstance(price_data, dict):
@@ -54,12 +93,56 @@ def search_amazon_products(query):
         else:
             price = "N/A"
 
-        products.append({
-            "title": item.get("title", "No title"),
+        # ==========================
+        # AMAZON AFFILIATE LINK
+        # ==========================
+
+        original_link = item.get("link", "")
+
+        if "?" in original_link:
+            affiliate_link = (
+                original_link +
+                "&tag=yuktiai-21"
+            )
+        else:
+            affiliate_link = (
+                original_link +
+                "?tag=yuktiai-21"
+            )
+
+        # ==========================
+        # SHORTEN LINK
+        # ==========================
+
+        short_link = shorten_url(
+            affiliate_link
+        )
+
+        # ==========================
+        # PRODUCT OBJECT
+        # ==========================
+
+        product = {
+            "title": item.get(
+                "title",
+                "No title"
+            ),
+
             "price": price,
-            "link": item.get("link", ""),
-            "image": item.get("image", ""),
-            "rating": item.get("rating", "N/A")
-        })
+
+            "link": short_link,
+
+            "image": item.get(
+                "image",
+                ""
+            ),
+
+            "rating": item.get(
+                "rating",
+                "N/A"
+            )
+        }
+
+        products.append(product)
 
     return products
