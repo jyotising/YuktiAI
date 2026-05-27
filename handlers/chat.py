@@ -1,89 +1,230 @@
+# handlers/chat.py
+
+import os
+import random
+import asyncio
+
 from aiogram import types
 
+from loader import dp, bot
+
 from services.ai_service import ask_ai
+
 from services.amazon_service import (
     is_shopping_query,
     search_amazon_products
 )
 
-from memory import save_memory, load_memory
+from services.vision_service import (
+    analyze_image
+)
 
-def register(dp):
 
-    @dp.message_handler(content_types=types.ContentType.TEXT)
-    async def chat_handler(message: types.Message):
+# ==========================================
+# PREMIUM SEARCH LOADING
+# ==========================================
 
-        user_id = str(message.from_user.id)
-        user_text = message.text
+premium_loading = [
+
+    "🧠 YuktiAI is thinking...",
+
+    "🔍 Finding the best products for you...",
+
+    "⚡ AI is analyzing live Amazon deals...",
+
+    "🛒 Searching premium recommendations...",
+
+    "✨ Curating smart suggestions..."
+]
+
+
+# ==========================================
+# MAIN CHAT HANDLER
+# ==========================================
+
+@dp.message_handler(
+    content_types=types.ContentType.TEXT
+)
+async def chat_handler(
+    message: types.Message
+):
+
+    user_message = message.text
+
+
+    # ======================================
+    # SHOPPING MODE
+    # ======================================
+
+    if is_shopping_query(user_message):
+
+        loading = await message.reply(
+            random.choice(premium_loading)
+        )
 
         try:
 
-            if is_shopping_query(user_text):
+            products = search_amazon_products(
+                user_message
+            )
 
-                await message.reply(
-                    "🔍 Searching Amazon..."
+            if not products:
+
+                await loading.edit_text(
+                    "❌ No products found."
                 )
-
-                products = search_amazon_products(
-                    user_text
-                )
-
-                if not products:
-                    await message.reply(
-                        "❌ No products found."
-                    )
-                    return
-
-                for product in products:
-
-                    caption = (
-                        f"📦 {product['title']}\n\n"
-                        f"💰 {product['price']}\n"
-                        f"⭐ {product['rating']}\n\n"
-                        f"🛒 {product['link']}"
-                    )
-
-                    if product["image"]:
-
-                        await message.reply_photo(
-                            photo=product["image"],
-                            caption=caption
-                        )
-
-                    else:
-
-                        await message.reply(caption)
 
                 return
 
-            history = load_memory(user_id)
+            await loading.delete()
 
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are YuktiAI, "
-                        "a smart AI assistant."
+            for product in products:
+
+                caption = f"""
+🛍 {product['title']}
+
+💰 Price: {product['price']}
+⭐ Rating: {product['rating']}
+
+🛒 Buy Now:
+{product['link']}
+"""
+
+                # SEND PRODUCT IMAGE
+
+                if product["image"]:
+
+                    await bot.send_photo(
+                        chat_id=message.chat.id,
+                        photo=product["image"],
+                        caption=caption
                     )
-                }
-            ]
 
-            messages.extend(history)
+                else:
 
-            messages.append({
-                "role": "user",
-                "content": user_text
-            })
+                    await message.reply(
+                        caption
+                    )
 
-            reply = ask_ai(messages)
-
-            save_memory(user_id, "user", user_text)
-            save_memory(user_id, "assistant", reply)
-
-            await message.reply(reply)
+                await asyncio.sleep(1)
 
         except Exception as e:
 
-            await message.reply(
-                f"⚠️ Error:\n{e}"
+            await loading.edit_text(
+                f"❌ Shopping Error:\n{e}"
             )
+
+        return
+
+
+    # ======================================
+    # NORMAL AI CHAT
+    # ======================================
+
+    try:
+
+        thinking = await message.reply(
+            "🧠 Thinking..."
+        )
+
+        ai_reply = ask_ai(
+            user_message
+        )
+
+        await thinking.edit_text(
+            ai_reply
+        )
+
+    except Exception as e:
+
+        await message.reply(
+            f"❌ AI Error:\n{e}"
+        )
+
+
+# ==========================================
+# IMAGE AI VISION
+# ==========================================
+
+@dp.message_handler(
+    content_types=types.ContentType.PHOTO
+)
+async def image_handler(
+    message: types.Message
+):
+
+    try:
+
+        loading = await message.reply(
+            "🧠 YuktiAI Vision is analyzing your image..."
+        )
+
+        # GET IMAGE
+
+        photo = message.photo[-1]
+
+        # GET FILE INFO
+
+        file_info = await bot.get_file(
+            photo.file_id
+        )
+
+        # DOWNLOAD IMAGE
+
+        downloaded_file = await bot.download_file(
+            file_info.file_path
+        )
+
+        # SAVE TEMP FILE
+
+        image_path = f"temp_{photo.file_id}.jpg"
+
+        with open(
+            image_path,
+            "wb"
+        ) as new_file:
+
+            new_file.write(
+                downloaded_file.read()
+            )
+
+        # AI ANALYSIS
+
+        result = analyze_image(
+            image_path
+        )
+
+        # FINAL RESPONSE
+
+        final_text = f"""
+✨ YuktiAI Vision Result
+
+{result}
+
+━━━━━━━━━━━━━━━
+🧠 Powered by YuktiAI Vision
+"""
+
+        await loading.edit_text(
+            final_text
+        )
+
+        # DELETE TEMP FILE
+
+        os.remove(
+            image_path
+        )
+
+    except Exception as e:
+
+        await message.reply(
+            f"❌ Vision Error:\n{e}"
+        )
+
+
+# ==========================================
+# FIX REGISTER ERROR
+# ==========================================
+
+def register(dp):
+    pass
